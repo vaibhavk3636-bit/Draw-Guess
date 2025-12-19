@@ -9,7 +9,7 @@ const server = http.createServer(app);
 // ✅ Socket.io with CORS (required for Netlify)
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: "https://draw-guess-fun.netlify.app",
     methods: ["GET", "POST"]
   }
 });
@@ -136,3 +136,4 @@ io.on("connection", socket => {
 server.listen(PORT, () => {
   console.log("Server running on port", PORT);
 });
+
