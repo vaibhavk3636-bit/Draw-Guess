@@ -120,6 +120,111 @@ io.on("connection", socket => {
       });
     }
   });
+/* ================= DRAW & GUESS CANVAS ================= */
+
+const canvas = document.getElementById("drawCanvas");
+const ctx = canvas.getContext("2d");
+
+let isDrawing = false;
+let isDrawer = false; // set from server later
+let currentColor = "#000000";
+let currentSize = 6;
+
+/* Resize canvas properly */
+function resizeCanvas() {
+  canvas.width = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+}
+window.addEventListener("resize", resizeCanvas);
+setTimeout(resizeCanvas, 300);
+
+/* Tool bindings */
+document.getElementById("colorPicker").oninput = e => {
+  currentColor = e.target.value;
+};
+
+document.getElementById("brushSize").oninput = e => {
+  currentSize = e.target.value;
+};
+
+document.getElementById("eraserBtn").onclick = () => {
+  currentColor = "#ffffff";
+};
+
+document.getElementById("clearBtn").onclick = () => {
+  if (!isDrawer) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (Game.state.online.socket) {
+    Game.state.online.socket.emit("draw", { type: "clear" });
+  }
+};
+
+/* Start drawing */
+canvas.addEventListener("pointerdown", e => {
+  if (!isDrawer) return;
+  isDrawing = true;
+  ctx.beginPath();
+  ctx.moveTo(e.offsetX, e.offsetY);
+
+  emitDraw("begin", e.offsetX, e.offsetY);
+});
+
+/* Drawing */
+canvas.addEventListener("pointermove", e => {
+  if (!isDrawing || !isDrawer) return;
+
+  ctx.lineTo(e.offsetX, e.offsetY);
+  ctx.strokeStyle = currentColor;
+  ctx.lineWidth = currentSize;
+  ctx.lineCap = "round";
+  ctx.stroke();
+
+  emitDraw("draw", e.offsetX, e.offsetY);
+});
+
+/* Stop drawing */
+canvas.addEventListener("pointerup", () => {
+  isDrawing = false;
+});
+
+/* Emit drawing to server */
+function emitDraw(type, x, y) {
+  if (!Game.state.online.socket) return;
+  Game.state.online.socket.emit("draw", {
+    type,
+    x,
+    y,
+    color: currentColor,
+    size: currentSize
+  });
+}
+
+/* Receive drawing from others */
+function setupDrawSocket(socket) {
+  socket.on("draw", data => {
+    if (data.type === "clear") {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+
+    ctx.strokeStyle = data.color;
+    ctx.lineWidth = data.size;
+    ctx.lineCap = "round";
+
+    if (data.type === "begin") {
+      ctx.beginPath();
+      ctx.moveTo(data.x, data.y);
+    } else {
+      ctx.lineTo(data.x, data.y);
+      ctx.stroke();
+    }
+  });
+}
+
+/* Clear canvas on new round */
+function clearCanvasForNewRound() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
 
   /* ---------- START GAME ---------- */
   socket.on("startGame", () => {
@@ -222,3 +327,4 @@ io.on("connection", socket => {
 server.listen(PORT, () => {
   console.log("Draw & Guess server running on", PORT);
 });
+
