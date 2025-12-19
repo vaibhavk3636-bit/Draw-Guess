@@ -7,7 +7,10 @@ const app = express();
 const server = http.createServer(app);
 
 const io = new Server(server, {
-  cors: { origin: "https://draw-guess-fun.netlify.app" }
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
 });
 
 const PORT = process.env.PORT || 3000;
@@ -327,4 +330,5 @@ function clearCanvasForNewRound() {
 server.listen(PORT, () => {
   console.log("Draw & Guess server running on", PORT);
 });
+
 
