@@ -6,7 +6,6 @@ const { nanoid } = require("nanoid");
 const app = express();
 const server = http.createServer(app);
 
-// ✅ Socket.io with CORS (required for Netlify)
 const io = new Server(server, {
   cors: {
     origin: "https://draw-guess-fun.netlify.app",
@@ -14,13 +13,12 @@ const io = new Server(server, {
   }
 });
 
-// ✅ Render dynamic port
 const PORT = process.env.PORT || 3000;
 
 /* ---------------- DATA ---------------- */
 const rooms = {};
 const randomQueue = [];
-const WORDS = ["apple", "car", "house", "dog", "cat", "tree", "phone"];
+const WORDS = ["apple", "car", "dog", "cat", "tree", "phone"];
 
 /* ---------------- HELPERS ---------------- */
 function createRoom(ownerId) {
@@ -40,11 +38,16 @@ function pickWord() {
   return WORDS[Math.floor(Math.random() * WORDS.length)];
 }
 
+function addBot(room) {
+  const botId = "BOT_" + nanoid(4);
+  room.players[botId] = { nick: "AI Bot 🤖", score: 0 };
+  room.order.push(botId);
+}
+
 /* ---------------- SOCKET ---------------- */
 io.on("connection", socket => {
   console.log("Connected:", socket.id);
 
-  // PLAY WITH FRIEND
   socket.on("createRoom", ({ nick }, cb) => {
     const room = createRoom(socket.id);
     room.players[socket.id] = { nick, score: 0 };
@@ -57,9 +60,9 @@ io.on("connection", socket => {
     io.to(room.id).emit("roomUpdate", room);
   });
 
-  socket.on("joinRoom", ({ roomId, nick }) => {
+  socket.on("joinRoom", ({ roomId, nick }, cb) => {
     const room = rooms[roomId];
-    if (!room) return;
+    if (!room) return cb({ ok: false });
 
     room.players[socket.id] = { nick, score: 0 };
     room.order.push(socket.id);
@@ -68,9 +71,9 @@ io.on("connection", socket => {
     socket.roomId = roomId;
 
     io.to(roomId).emit("roomUpdate", room);
+    cb({ ok: true });
   });
 
-  // PLAY WITH RANDOM
   socket.on("playRandom", ({ nick }) => {
     if (randomQueue.length > 0) {
       const other = randomQueue.shift();
@@ -84,16 +87,28 @@ io.on("connection", socket => {
       io.sockets.sockets.get(other.id)?.join(room.id);
 
       socket.roomId = room.id;
-      io.to(room.id).emit("randomMatched", room);
+      io.to(room.id).emit("roomUpdate", room);
     } else {
       randomQueue.push({
         id: socket.id,
         player: { nick, score: 0 }
       });
+
+      // ⏱ Auto bot after 10 seconds
+      setTimeout(() => {
+        if (socket.roomId) return;
+        const room = createRoom(socket.id);
+        room.players[socket.id] = { nick, score: 0 };
+        room.order.push(socket.id);
+        addBot(room);
+
+        socket.join(room.id);
+        socket.roomId = room.id;
+        io.to(room.id).emit("roomUpdate", room);
+      }, 10000);
     }
   });
 
-  // START GAME (OWNER)
   socket.on("startGame", () => {
     const room = rooms[socket.roomId];
     if (!room || room.owner !== socket.id) return;
@@ -105,12 +120,10 @@ io.on("connection", socket => {
     io.to(room.id).emit("gameStarted", { drawer: room.drawer });
   });
 
-  // DRAWING
   socket.on("draw", data => {
     socket.to(socket.roomId).emit("draw", data);
   });
 
-  // GUESS
   socket.on("guess", text => {
     const room = rooms[socket.roomId];
     if (!room) return;
@@ -122,13 +135,16 @@ io.on("connection", socket => {
     }
   });
 
+  socket.on("leaveRoom", () => {
+    socket.leave(socket.roomId);
+    socket.roomId = null;
+  });
+
   socket.on("disconnect", () => {
     const room = rooms[socket.roomId];
     if (!room) return;
-
     delete room.players[socket.id];
     room.order = room.order.filter(id => id !== socket.id);
-
     if (room.order.length === 0) delete rooms[room.id];
   });
 });
@@ -136,4 +152,3 @@ io.on("connection", socket => {
 server.listen(PORT, () => {
   console.log("Server running on port", PORT);
 });
-
